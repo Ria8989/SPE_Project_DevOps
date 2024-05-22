@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment{
-        GITHUB_REPO_URL = 'https://github.com/Ria8989/BlossomCare-Nursery-Management-Solution.git'    
+        GITHUB_REPO_URL = 'https://github.com/Ria8989/SPE_Project_DevOps.git'    
         KUBECONFIG = '/var/lib/jenkins/.minikube/profiles/minikube/config'
     }
 
