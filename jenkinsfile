@@ -1,0 +1,97 @@
+pipeline {
+    agent any
+
+    environment{
+        GITHUB_REPO_URL = 'https://github.com/Ria8989/BlossomCare-Nursery-Management-Solution.git'    
+        KUBECONFIG = '/var/lib/jenkins/.minikube/profiles/minikube/config'
+    }
+
+    stages {
+        stage('GIT CHECKOUT') {
+            steps {
+                script {
+                        // Checkout the code from the GitHub repo 
+                        git branch: 'main', credentialsId: 'SPE_Major', url: "${GITHUB_REPO_URL}"
+                }
+            }
+        }
+  
+        
+	stage('BACKEND BUILD') {
+	    steps {
+                // Change to the directory containing the pom.xml file
+                dir('PlantAndPlanters') {
+                    // Set environment variables
+                    withEnv([
+                        'SPRING_DATASOURCE_URL=jdbc:mysql://localhost:3306/plant?createDatabaseIfNotExist=true',
+                        'SPRING_DATASOURCE_USERNAME=root',
+                        'SPRING_DATASOURCE_PASSWORD=riya@root'
+                    ]) {
+                        // Run the Maven build
+                        sh 'mvn clean install'
+                    }
+                }
+            }
+	}
+
+
+        stage('BUILD DOCKER IMAGES') {
+            steps {
+        	script {
+        	         sh 'pwd'
+        	     // Build and tag backend Docker image
+                     sh 'docker build -t backend-image -f ./PlantAndPlanters/Dockerfile .'
+                        
+                     // Build and tag frontend Docker image
+                     sh 'docker build -t frontend-image -f ./PlantAndPlantersFrontend/Dockerfile .'
+                     
+                     sh 'docker build -t mysql-image -f Dockerfile .'
+                }
+            }
+        }
+
+        stage('PUSH DOCKER IMAGE') {
+            steps {
+		script{
+                    docker.withRegistry('', 'DockerHubKey') {
+                    sh 'docker tag backend-image ria8989/backend-repo'
+                    sh 'docker push ria8989/backend-repo'
+                    
+                    sh 'docker tag frontend-image ria8989/frontend-repo'
+                    sh 'docker push ria8989/frontend-repo'
+                    
+                    sh 'docker tag mysql-image ria8989/mysql-image'
+                    sh 'docker push ria8989/mysql-image'
+                    }
+                }
+            
+                // Remove image
+                sh "docker rmi -f ria8989/backend-repo || true"
+                sh "docker rmi -f ria8989/frontend-repo || true"
+                sh "docker rmi -f ria8989/mysql-image || true"
+                sh "docker rmi -f backend-image || true"
+                sh "docker rmi -f frontend-image || true"
+                sh "docker rmi -f mysql-image || true"
+            }
+        }
+        
+
+        stage('RUN ANSIBLE PLAYBOOK') {
+            steps {
+                script {
+                    //sh 'sudo chown -R $USER /home/riya/.minikube' 
+                    //sh 'sudo chmod -R u+wrx /home/riya/.minikube'
+                    //sh 'minikube start'
+                    //sh 'kubectl config get-contexts'
+                    //sh 'kubectl config use-context minikube'
+                    ansiblePlaybook(
+                        playbook: './ansible/deploy.yml',
+                        inventory: './ansible/inventory'
+                    )
+                }
+            }
+        }
+       
+        
+    }
+}

@@ -1,0 +1,71 @@
+---
+- name: Deploying BlossomCare on the Kubernetes cluster
+  hosts: localhost
+  remote_user: riya
+  become: false
+  tasks:
+    - name: Fix permissions on .minikube directory
+      ansible.builtin.shell: |
+        sudo chown -R $USER:$USER /home/riya/.minikube
+        sudo chmod -R u+wrx /home/riya/.minikube
+
+    - name: Start Minikube
+      ansible.builtin.shell: |
+        minikube start
+        
+    - name: Wait for Minikube to start completely
+      ansible.builtin.wait_for_connection:
+      timeout: 600
+      delegate_to: localhost
+
+    - name: Ensure Kubernetes context is set
+      ansible.builtin.shell: |
+        export KUBECONFIG=/var/lib/jenkins/.minikube/profiles/minikube/config
+        kubectl config use-context minikube
+      
+    - name: Deleting older application files
+      ansible.builtin.shell: |
+        export KUBECONFIG=/var/lib/jenkins/.minikube/profiles/minikube/config
+        kubectl delete -f ../manifest/mysql-deployment.yml -n my-app --ignore-not-found=true
+        kubectl delete -f ../manifest/backend-deployment.yml -n my-app --ignore-not-found=true
+        kubectl delete -f ../manifest/frontend-deployment.yml -n my-app --ignore-not-found=true
+        kubectl delete -f ../manifest/my-ingress.yml -n my-app --ignore-not-found=true
+        
+    - name: Deploying MySQL to Kubernetes cluster
+      ansible.builtin.shell: |
+        export KUBECONFIG=/var/lib/jenkins/.minikube/profiles/minikube/config
+        kubectl create namespace my-app || true
+        kubectl config set-context --current --namespace=my-app
+        kubectl apply -f ../manifest/mysql-deployment.yml -n my-app
+      
+    - name: Wait for MySQL pod to be ready
+      ansible.builtin.shell: |
+        export KUBECONFIG=/var/lib/jenkins/.minikube/profiles/minikube/config
+        kubectl wait --for=condition=ready pod -l app=mysql -n my-app --timeout=600s
+
+    - name: Deploying backend to Kubernetes cluster
+      ansible.builtin.shell: |
+        export KUBECONFIG=/var/lib/jenkins/.minikube/profiles/minikube/config
+        kubectl apply -f ../manifest/backend-deployment.yml -n my-app
+
+    - name: Wait for backend pod to be ready
+      ansible.builtin.shell: |
+        export KUBECONFIG=/var/lib/jenkins/.minikube/profiles/minikube/config
+        kubectl wait --for=condition=ready pod -l app=backend -n my-app --timeout=600s
+
+    - name: Deploying frontend and ingress to Kubernetes cluster
+      ansible.builtin.shell: |
+        export KUBECONFIG=/var/lib/jenkins/.minikube/profiles/minikube/config
+        kubectl apply -f ../manifest/frontend-deployment.yml -n my-app
+        kubectl apply -f ../manifest/my-ingress.yml -n my-app
+
+    - name: Wait for frontend pod to be ready
+      ansible.builtin.shell: |
+        export KUBECONFIG=/var/lib/jenkins/.minikube/profiles/minikube/config
+        kubectl wait --for=condition=ready pod -l app=frontend -n my-app --timeout=600s
+
+    - name: Port forward backend service
+      ansible.builtin.shell: |
+        export KUBECONFIG=/var/lib/jenkins/.minikube/profiles/minikube/config
+        pgrep -f "kubectl port-forward service/backend 8085:8085 -n my-app" || nohup kubectl port-forward service/backend 8085:8085 -n my-app > /dev/null 2>&1 &
+
